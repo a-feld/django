@@ -131,12 +131,15 @@ class ASGIHandler(base.BaseHandler):
 
     def __init__(self):
         super().__init__()
-        self.load_middleware(is_async=True)
+        self.middleware_loaded = False
 
     async def __call__(self, scope, receive, send):
         """
         Async entrypoint - parses the request and hands off to get_response.
         """
+        if not self.middleware_loaded:
+            self.load_middleware(is_async=True)
+            self.middleware_loaded = True
         # Serve only HTTP connections.
         # FIXME: Allow to override this.
         if scope['type'] != 'http':
