@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 import tempfile
@@ -137,6 +138,10 @@ class ASGIHandler(base.BaseHandler):
         """
         Async entrypoint - parses the request and hands off to get_response.
         """
+        # Set request_task to the task at the entrypoint. This will
+        # auto-propagate in asyncio on Python 3.7+
+        base.request_task_set(asyncio.current_task())
+
         if not self.middleware_loaded:
             self.load_middleware(is_async=True)
             self.middleware_loaded = True
@@ -154,7 +159,11 @@ class ASGIHandler(base.BaseHandler):
             return
         # Request is complete and can be served.
         set_script_prefix(self.get_script_prefix(scope))
-        await sync_to_async(signals.request_started.send, thread_sensitive=True)(sender=self.__class__, scope=scope)
+        await sync_to_async(
+            signals.request_started.send,
+            thread_sensitive=True,
+            current_context_func=base.request_task_get,
+        )(sender=self.__class__, scope=scope)
         # Get the request and check for basic issues.
         request, error_response = self.create_request(scope, body_file)
         if request is None:
@@ -262,7 +271,11 @@ class ASGIHandler(base.BaseHandler):
                     'body': chunk,
                     'more_body': not last,
                 })
-        await sync_to_async(response.close, thread_sensitive=True)()
+        await sync_to_async(
+            response.close,
+            thread_sensitive=True,
+            current_context_func=base.request_task_get,
+        )()
 
     @classmethod
     def chunk_bytes(cls, data):
